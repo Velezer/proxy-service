@@ -9,6 +9,7 @@ use hyper::{
     http::uri::PathAndQuery,
     Request, Response, StatusCode, Uri,
 };
+use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{
     client::legacy::{connect::HttpConnector, Client},
     rt::{TokioExecutor, TokioIo},
@@ -22,7 +23,7 @@ type RespBody = BoxBody<Bytes, hyper::Error>;
 struct AppState {
     target: Uri,
     host_header: HeaderValue,
-    client: Client<HttpConnector, Incoming>,
+    client: Client<hyper_rustls::HttpsConnector<HttpConnector>, Incoming>,
 }
 
 #[tokio::main]
@@ -43,8 +44,11 @@ async fn main() {
         .as_str();
     let host_header = HeaderValue::from_str(authority).expect("invalid authority in TARGET_BASE");
 
-    let mut connector = HttpConnector::new();
-    connector.enforce_http(false);
+    let connector = HttpsConnectorBuilder::new()
+        .with_webpki_roots()
+        .https_or_http()
+        .enable_http1()
+        .build();
 
     let state = Arc::new(AppState {
         target,
