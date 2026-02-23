@@ -16,7 +16,7 @@ use hyper_util::{
 };
 use tokio::net::TcpListener;
 
-type RespBody = BoxBody<Bytes, Infallible>;
+type RespBody = BoxBody<Bytes, hyper::Error>;
 
 #[derive(Clone)]
 struct AppState {
@@ -124,6 +124,12 @@ async fn proxy(
 fn simple_response(status: StatusCode, body: impl Into<Bytes>) -> Response<RespBody> {
     Response::builder()
         .status(status)
-        .body(Full::new(body.into()).boxed())
-        .unwrap_or_else(|_| Response::new(Empty::new().boxed()))
+        .body(
+            Full::new(body.into())
+                .map_err(|never| match never {})
+                .boxed(),
+        )
+        .unwrap_or_else(|_| {
+            Response::new(Empty::new().map_err(|never| match never {}).boxed())
+        })
 }
