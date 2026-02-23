@@ -9,6 +9,7 @@ use hyper::{
     http::uri::PathAndQuery,
     Request, Response, StatusCode, Uri,
 };
+use hyper_rustls::HttpsConnector;
 use hyper_util::{
     client::legacy::{connect::HttpConnector, Client},
     rt::{TokioExecutor, TokioIo},
@@ -36,16 +37,11 @@ struct AppState {
     authority: String,
     /// `Host` header value derived from `authority`.
     host_header: HeaderValue,
-    /// HTTP client used to forward requests to the upstream.
+    /// HTTP/HTTPS client used to forward requests to the upstream.
     ///
-    /// # Body-type note
-    /// The body type parameter here is `Incoming` — the same type that arrives
-    /// from the downstream TCP connection — because we stream the request body
-    /// straight through to the upstream without buffering or transforming it.
-    /// If you ever need to send a *synthesised* request (e.g. for retries or
-    /// health-checks) you should use a separate `Client<HttpConnector,
-    /// Full<Bytes>>` instance.
-    client: Client<HttpConnector, Incoming>,
+    /// Uses `hyper-rustls` so that both `http://` and `https://` upstreams are
+    /// supported without any additional configuration.
+    client: Client<HttpsConnector<HttpConnector>, Incoming>,
 }
 
 #[tokio::main]
@@ -56,7 +52,7 @@ async fn main() {
         .expect("LISTEN_ADDR must be a valid host:port");
 
     let target = env::var("TARGET_BASE")
-        .unwrap_or_else(|_| "http://example.com".to_owned())
+        .unwrap_or_else(|_| "https://raw.githubusercontent.com".to_owned())
         .parse::<Uri>()
         .expect("TARGET_BASE must be a valid absolute URI");
 
@@ -76,18 +72,21 @@ async fn main() {
     let host_header =
         HeaderValue::from_str(&authority).expect("TARGET_BASE authority is not a valid header value");
 
-    let mut connector = HttpConnector::new();
-    // Allow non-HTTP schemes to pass through the connector (needed when the
-    // upstream is reached via a tunnel or when `enforce_http` would otherwise
-    // reject `https` URIs before TLS is negotiated at a higher layer).
-    connector.enforce_http(false);
+    // Build an HTTPS-capable connector using rustls with the Mozilla WebPKI
+    // root certificates.  This supports both `http://` and `https://` upstreams.
+    let https_connector = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_webpki_roots()
+        .https_or_http()
+        .enable_http1()
+        .enable_http2()
+        .build();
 
     let state = Arc::new(AppState {
         target,
         scheme,
         authority,
         host_header,
-        client: Client::builder(TokioExecutor::new()).build(connector),
+        client: Client::builder(TokioExecutor::new()).build(https_connector),
     });
 
     let listener = TcpListener::bind(listen_addr)
