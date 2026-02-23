@@ -7,5 +7,6 @@ edition = "2021"
 bytes = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server", "client"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "http1", "server", "tokio"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "server", "tokio"] }
+hyper-rustls = { version = "0.27", features = ["http1", "http2", "webpki-roots"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
